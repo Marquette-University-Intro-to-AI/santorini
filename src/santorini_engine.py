@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from data_structures import Action, Coordinate, GameState
 
 if TYPE_CHECKING:
-    from santorini_game_engine import TerminationReason
+    from santorini_tournament_harness import TerminationReason
 
 Fingerprint = tuple[
     tuple[tuple[int, ...], ...],
@@ -139,7 +139,7 @@ class SantoriniEngine:
         """Return a termination reason for the engine-tracked rules, else None.
 
         Takes the TerminationReason enum class as a parameter to avoid a
-        runtime circular import (santorini_game_engine imports this module).
+        runtime circular import (santorini_tournament_harness imports this module).
 
         Checks win, no-legal-action, and threefold repetition. The
         turn-limit is enforced by the harness loop, not here.

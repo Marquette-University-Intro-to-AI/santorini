@@ -8,12 +8,12 @@ top-level function:
 ```python
 from data_structures import Action, GameState
 
+
 def choose_action(
     state: GameState,
     legal_actions: tuple[Action, ...],
     time_limit_seconds: float,
-) -> Action:
-    ...
+) -> Action: ...
 ```
 
 The function must return one member of `legal_actions` before the time limit.
@@ -66,18 +66,18 @@ The game always allows 200 turns. A template bot lives at
 
 ## Programmatic harness API
 
-`santorini_game_engine` is the public entry point:
+`santorini_tournament_harness` is the public entry point:
 
 ```python
-from santorini_game_engine import MatchConfig, run_santorini_game
+from santorini_tournament_harness import MatchConfig, run_santorini_tournament
 
-result = run_santorini_game(bot_a, bot_b)                      # one game
-results = run_santorini_game(bot_a, bot_b, num_games=5)        # five games
+result = run_santorini_tournament(bot_a, bot_b)  # one game
+results = run_santorini_tournament(bot_a, bot_b, num_games=5)  # five games
 config = MatchConfig(move_time_limit_seconds=2.0, max_turns=200, seed=2026)
-results = run_santorini_game(bot_a, bot_b, config=config)      # explicit config
+results = run_santorini_tournament(bot_a, bot_b, config=config)  # explicit config
 ```
 
-`run_santorini_game` returns one `GameResult` per game, in the order they
+`run_santorini_tournament` returns one `GameResult` per game, in the order they
 were played. Each `GameResult` carries `winner`, `loser`, `reason`
 (a `TerminationReason`), `turns_played`, the recorded `moves`, and a `detail`
 string for timeout/exception/invalid-action messages. The winner is `None`
@@ -102,11 +102,10 @@ The harness, not the student bot, is responsible for:
    enforcing the maximum game length.
 5. Recording the seed, actions, and final outcome in the returned results.
 
-`run_game_for_testing` in `tests/test_helpers.py` is a local development
-helper that drives one in-process game against a given engine and two bot
-functions. The official tournament runner should additionally use process
-isolation because an in-process Python call cannot safely terminate a bot
-that hangs.
+`run_game` in `santorini_tournament_harness` drives one in-process game
+against a given engine and two bot functions. The official tournament runner
+should additionally use process isolation because an in-process Python call
+cannot safely terminate a bot that hangs.
 
 ## Repository layout
 
@@ -114,7 +113,7 @@ that hangs.
 | --- | --- |
 | `src/data_structures.py` | `Coordinate`, `Action`, `GameState` (public API types). |
 | `src/santorini_engine.py` | `SantoriniEngine`: setup, legal actions, apply, termination. |
-| `src/santorini_game_engine.py` | `MatchConfig`, `TerminationReason`, `GameResult`, `run_santorini_game`. |
+| `src/santorini_tournament_harness.py` | `MatchConfig`, `TerminationReason`, `GameResult`, `run_game`, `run_santorini_tournament`. |
 | `src/santorini.py` | Command-line runner. |
 | `src/student_bot_template.py` | Minimal example bot. |
-| `tests/` | Engine unit tests, harness integration tests, and `test_helpers.py`. |
+| `tests/` | Engine unit tests and harness integration tests. |

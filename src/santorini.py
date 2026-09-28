@@ -12,16 +12,9 @@ students run games from their own terminals without writing Python code.
 from __future__ import annotations
 
 import argparse
-import sys
 import importlib.util
-from pathlib import Path
+import sys
 from typing import Any
-
-# Make the repository root importable so run_santorini_game can reach
-# tests.test_helpers (run_game_for_testing) when this CLI is executed directly.
-_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
 
 
 def _load_bot(path: str) -> Any:
@@ -39,7 +32,7 @@ def _load_bot(path: str) -> Any:
     sys.modules["bot_module"] = module
     spec.loader.exec_module(module)
     if hasattr(module, "choose_action"):
-        return getattr(module, "choose_action")
+        return module.choose_action
 
     raise ValueError(
         f"{path} does not have a ``choose_action`` function. "
@@ -88,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    from santorini_game_engine import MatchConfig, run_santorini_game
+    from santorini_tournament_harness import MatchConfig, run_santorini_tournament
 
     config = MatchConfig(
         move_time_limit_seconds=args.time_limit,
@@ -96,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
     )
 
-    results = run_santorini_game(bot_a, bot_b, config=config, num_games=args.num_games)
+    results = run_santorini_tournament(bot_a, bot_b, config=config, num_games=args.num_games)
     name = {0: "Bot A", 1: "Bot B"}
 
     def display(bot_id: int | None) -> str:

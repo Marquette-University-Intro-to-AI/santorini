@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 
 from santorini_engine import DOME, PLAYER_WORKERS, SantoriniEngine
-from santorini_game_engine import TerminationReason
+from santorini_tournament_harness import TerminationReason
 
 
 def _engine_with_positions(
