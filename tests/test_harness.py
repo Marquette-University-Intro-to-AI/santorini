@@ -78,6 +78,19 @@ def _fresh_engine(seed: int) -> SantoriniEngine:
     return SantoriniEngine(seed)
 
 
+def test_smoke_full_game_template_bot() -> None:
+    """A full game between two student_bot_template bots runs to a terminal result."""
+    from student_bot_template import choose_action
+
+    result = run_santorini_tournament(choose_action, choose_action, MatchConfig(seed=1), num_games=1)[0]
+    assert result.reason is not None
+    assert len(result.moves) == result.turns_played
+    if result.reason == TerminationReason.WIN:
+        assert result.winner is not None and result.loser is not None
+    else:
+        assert result.winner is None and result.loser is None
+
+
 def test_run_game_win() -> None:
     """A bot that seizes a height-3 destination wins and the opponent loses."""
     result = run_santorini_tournament(_height_hunting_bot(), _height_hunting_bot(), MatchConfig(seed=0), num_games=1)[0]

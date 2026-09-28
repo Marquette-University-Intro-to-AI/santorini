@@ -22,8 +22,6 @@ py-modules = [
 # global python, which also cannot resolve dynamic editable .pth files on 3.11),
 # so src/ must be on the analysis path regardless of environment.
 extraPaths = ["src"]
-# The bot contract mandates these parameter names; the starter bot does not use all of them.
-perFileIgnoreRules = { "src/student_bot_template.py" = ["reportUnusedParameter"] }
 
 [tool.ruff]
 line-length = 120

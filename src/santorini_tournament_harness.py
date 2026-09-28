@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from time import perf_counter
-from typing import Protocol, TypeAlias
+from typing import TypeAlias
 
 from data_structures import Action, GameState
 from santorini_engine import SantoriniEngine
@@ -19,23 +19,6 @@ from santorini_engine import SantoriniEngine
 BOARD_SIZE = 5
 MAX_HEIGHT = 4  # 0: ground; 1--3: building levels; 4: dome
 BotId: TypeAlias = int  # Always 0 or 1.
-
-
-class SantoriniBot(Protocol):
-    """The only callable interface a student bot must expose."""
-
-    def choose_action(
-        self,
-        state: GameState,
-        legal_actions: tuple[Action, ...],
-        time_limit_seconds: float,
-    ) -> Action:
-        """Return exactly one Action from legal_actions.
-
-        The function must not mutate inputs, print match data, access the
-        network, or read files outside its own submission directory.
-        """
-        ...
 
 
 BotFunction: TypeAlias = Callable[[GameState, tuple[Action, ...], float], Action]
