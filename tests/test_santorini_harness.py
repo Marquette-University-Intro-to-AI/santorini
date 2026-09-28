@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import time
 
-from santorini_types import Action, GameState
 from santorini_engine import SantoriniEngine
 from santorini_harness import (
     BotFunction,
@@ -19,6 +18,7 @@ from santorini_harness import (
     run_game,
     run_santorini_tournament,
 )
+from santorini_types import Action, GameState
 
 
 # Always play the first offered legal action.

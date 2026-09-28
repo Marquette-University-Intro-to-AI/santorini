@@ -20,9 +20,11 @@ from typing import Any
 def _load_bot(path: str) -> Any:
     """Load a bot module from *path* and return its ``choose_action`` function.
 
-    Raises ``ValueError`` if the file does not exist, is not importable, or
-    lacks a ``choose_action`` attribute.  The caller should catch this and
-    print a user-friendly message before exiting with code 1.
+    Raises ``ValueError`` if the file is not importable or lacks a
+    ``choose_action`` attribute.  A missing file propagates as
+    ``FileNotFoundError`` (raised by the import loader).  The caller
+    should catch ``ValueError``/``OSError`` and print a user-friendly
+    message before exiting with code 1.
     """
     spec = importlib.util.spec_from_file_location("bot_module", path)
     if spec is None or spec.loader is None:
@@ -77,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         bot_a = _load_bot(args.bot1)
         bot_b = _load_bot(args.bot2)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

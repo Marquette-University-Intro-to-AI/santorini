@@ -13,8 +13,8 @@ from enum import Enum
 from time import perf_counter
 from typing import TypeAlias
 
-from santorini_types import Action, GameState
 from santorini_engine import SantoriniEngine
+from santorini_types import Action, GameState
 
 BOARD_SIZE = 5
 MAX_HEIGHT = 4  # 0: ground; 1--3: building levels; 4: dome

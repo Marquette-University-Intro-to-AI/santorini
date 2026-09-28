@@ -46,10 +46,11 @@ def test_load_bot_starter_bot_file() -> None:
 
 
 def test_load_bot_missing_file_raises(tmp_path: Path) -> None:
-    # Characterization: for a path whose file does not exist, the importlib
-    # loader raises FileNotFoundError; no module spec can be created, so the
-    # documented ValueError is NOT produced. main() only catches ValueError,
-    # so this propagates as an unhandled traceback (see test below).
+    # For a path whose file does not exist, the importlib loader raises
+    # FileNotFoundError; no module spec can be created, so _load_bot does
+    # not raise the documented ValueError. main() catches OSError (the
+    # superclass of FileNotFoundError) and converts it to a friendly
+    # error message and exit code 1 (see test_main_missing_bot_file_returns_one).
     with pytest.raises(FileNotFoundError):
         _load_bot(str(tmp_path / "does_not_exist.py"))
 
@@ -123,16 +124,15 @@ def test_main_prints_detail_line_when_present(tmp_path: Path, capsys: pytest.Cap
     assert "Detail: " in out
 
 
-def test_main_missing_bot_file_propagates(tmp_path: Path) -> None:
-    # Characterization: the documented error path (print "Error: ..." and
-    # return 1) does NOT cover missing files, because _load_bot raises
-    # FileNotFoundError, which main() does not catch. Observed today: an
-    # unhandled exception escapes main(). If this is ever fixed to return 1
-    # with a friendly message, this test must be updated accordingly.
+def test_main_missing_bot_file_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     good = _write_bot(tmp_path, "good.py", _QUICK_BOT)
 
-    with pytest.raises(FileNotFoundError):
-        main(["--bot1", str(tmp_path / "missing.py"), "--bot2", str(good)])
+    exit_code = main(["--bot1", str(tmp_path / "missing.py"), "--bot2", str(good)])
+    err = capsys.readouterr().err
+
+    assert exit_code == 1
+    assert "Error:" in err
+    assert "missing.py" in err
 
 
 def test_main_bot_without_choose_action_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
