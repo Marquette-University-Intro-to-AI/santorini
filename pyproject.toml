@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64"]
+backend = "setuptools"
+
+[project]
+name = "santorini-harness-api"
+version = "0.1.0"
+description = "Santorini game engine harness API"
+
+[[tool.setuptools.packages]]
+name = "src"
+path = "src"
