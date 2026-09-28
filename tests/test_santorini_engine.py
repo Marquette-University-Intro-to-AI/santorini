@@ -8,8 +8,12 @@ perspective transform to the public GameState, and termination detection.
 from __future__ import annotations
 
 import copy
+import dataclasses
+from dataclasses import FrozenInstanceError
 
-from santorini_engine import DOME, PLAYER_WORKERS, SantoriniEngine
+import pytest
+
+from santorini_engine import DOME, PLAYER_WORKERS, BoardState, SantoriniEngine, _legal_move_destinations
 from santorini_harness import TerminationReason
 
 
@@ -56,9 +60,9 @@ def test_setup_distinct_positions() -> None:
     engine = SantoriniEngine(123)
     positions = list(engine.workers.values())
     assert len(set(positions)) == 4
-    for row, col in positions:
+    for row, column in positions:
         assert 0 <= row < 5
-        assert 0 <= col < 5
+        assert 0 <= column < 5
 
 
 def test_setup_all_squares_valid() -> None:
@@ -66,8 +70,8 @@ def test_setup_all_squares_valid() -> None:
     assert all(h == 0 for row in engine.heights for h in row)
     # No worker on a domed square at setup (all heights are 0, but assert
     # the representation explicitly).
-    for row, col in engine.workers.values():
-        assert engine.heights[row][col] != DOME
+    for row, column in engine.workers.values():
+        assert engine.heights[row][column] != DOME
 
 
 def test_setup_order_matches_spec() -> None:
@@ -150,9 +154,9 @@ def test_occupied_blocks_building() -> None:
 def test_corner_worker_fewer_actions() -> None:
     # Worker at (0,0) has 3 adjacent squares vs 8 for one at (2,2).
     corner = _engine_with_positions((0, 0), (4, 4), (4, 3), (4, 2), current_player=0)
-    assert len(corner._legal_move_destinations(0, 0)) == 3
+    assert len(_legal_move_destinations(corner.to_board_state(), 0, 0)) == 3
     center = _engine_with_positions((2, 2), (4, 4), (4, 3), (4, 2), current_player=0)
-    assert len(center._legal_move_destinations(2, 2)) == 8
+    assert len(_legal_move_destinations(center.to_board_state(), 2, 2)) == 8
 
 
 def test_worker_index_perspective() -> None:
@@ -161,8 +165,9 @@ def test_worker_index_perspective() -> None:
     actions_by_worker: dict[int, set[tuple[int, int]]] = {0: set(), 1: set()}
     for action in engine.legal_actions():
         actions_by_worker[action.worker].add((action.move_to.row, action.move_to.column))
-    assert actions_by_worker[0] == set(engine._legal_move_destinations(0, 0))
-    assert actions_by_worker[1] == set(engine._legal_move_destinations(0, 2))
+    state = engine.to_board_state()
+    assert actions_by_worker[0] == set(_legal_move_destinations(state, 0, 0))
+    assert actions_by_worker[1] == set(_legal_move_destinations(state, 0, 2))
 
 
 def test_all_actions_are_complete_turns() -> None:
@@ -326,3 +331,65 @@ def test_non_repeating_position_not_draw() -> None:
     engine.apply(engine.legal_actions()[0])
     assert engine.state_history[-1] != engine.state_history[0]
     assert engine.check_termination(TerminationReason) is None
+
+
+# ---------------------------------------------------------------------------
+# Functional core (pure)
+# ---------------------------------------------------------------------------
+
+
+def test_core_setup_deterministic_and_immutable() -> None:
+    from santorini_engine import setup
+
+    first = setup(7)
+    second = setup(7)
+    assert first == second
+    assert isinstance(first, BoardState)
+    with pytest.raises(FrozenInstanceError):
+        first.winner = 0  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_engine_successors_match_legal_actions() -> None:
+    engine = SantoriniEngine(42)
+    actions = engine.legal_actions()
+    successor_pairs = engine.successors()
+    assert len(successor_pairs) == len(actions)
+    assert [action for action, _ in successor_pairs] == list(actions)
+
+
+def test_successors_next_state_equals_applied_state() -> None:
+    engine = SantoriniEngine(3)
+    action, next_state = engine.successors()[0]
+    engine.apply(action)
+    assert next_state == engine.to_board_state()
+
+
+def test_successors_empty_on_terminal_position() -> None:
+    heights = [[0] * 5 for _ in range(5)]
+    for r, c in ((0, 1), (1, 0), (1, 1)):
+        heights[r][c] = DOME  # wall in worker at (0,0)
+    for r, c in ((0, 3), (1, 2), (1, 3)):
+        heights[r][c] = DOME  # wall in worker at (0,2)
+    engine = _engine_with_positions((0, 0), (4, 4), (0, 2), (4, 3), heights=heights, current_player=0)
+    assert engine.legal_actions() == ()
+    assert engine.successors() == ()
+
+
+def test_apply_action_does_not_mutate_input() -> None:
+    from santorini_engine import apply_action
+
+    engine = SantoriniEngine(5)
+    state = engine.to_board_state()
+    original = dataclasses.replace(state)
+    action = engine.legal_actions()[0]
+    next_state = apply_action(state, action)
+    assert state == original
+    assert next_state != state
+
+
+def test_successors_next_states_are_immutable() -> None:
+    engine = SantoriniEngine(5)
+    for _action, next_state in engine.successors():
+        assert isinstance(next_state, BoardState)
+        with pytest.raises(FrozenInstanceError):
+            next_state.current_player = 1  # pyright: ignore[reportAttributeAccessIssue]
