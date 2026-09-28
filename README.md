@@ -6,7 +6,7 @@ Every submission contains a Python file, normally `bot.py`, with exactly this
 top-level function:
 
 ```python
-from data_structures import Action, GameState
+from santorini_types import Action, GameState
 
 
 def choose_action(
@@ -49,10 +49,10 @@ makes an invalid response unambiguous.
 
 ## Running games from the command line
 
-`src/santorini.py` is the local command-line runner:
+`src/run_santorini.py` is the local game runner:
 
 ```console
-python src/santorini.py \
+python src/run_santorini.py \
   --bot1 bot_a.py \
   --bot2 bot_b.py \
   --seed 2026 \
@@ -62,14 +62,14 @@ python src/santorini.py \
 
 `--num-games` runs sequential games seeded from `--seed + game_index`.
 The game always allows 200 turns. A template bot lives at
-`src/student_bot_template.py`.
+`src/starter_bot.py`.
 
 ## Programmatic harness API
 
-`santorini_tournament_harness` is the public entry point:
+`santorini_harness` is the public entry point:
 
 ```python
-from santorini_tournament_harness import MatchConfig, run_santorini_tournament
+from santorini_harness import MatchConfig, run_santorini_tournament
 
 result = run_santorini_tournament(bot_a, bot_b)  # one game
 results = run_santorini_tournament(bot_a, bot_b, num_games=5)  # five games
@@ -102,7 +102,7 @@ The harness, not the student bot, is responsible for:
    enforcing the maximum game length.
 5. Recording the seed, actions, and final outcome in the returned results.
 
-`run_game` in `santorini_tournament_harness` drives one in-process game
+`run_game` in `santorini_harness` drives one in-process game
 against a given engine and two bot functions. The official tournament runner
 should additionally use process isolation because an in-process Python call
 cannot safely terminate a bot that hangs.
@@ -111,9 +111,9 @@ cannot safely terminate a bot that hangs.
 
 | Path | Purpose |
 | --- | --- |
-| `src/data_structures.py` | `Coordinate`, `Action`, `GameState` (public API types). |
+| `src/santorini_types.py` | `Coordinate`, `Action`, `GameState` (public API types). |
 | `src/santorini_engine.py` | `SantoriniEngine`: setup, legal actions, apply, termination. |
-| `src/santorini_tournament_harness.py` | `MatchConfig`, `TerminationReason`, `GameResult`, `run_game`, `run_santorini_tournament`. |
-| `src/santorini.py` | Command-line runner. |
-| `src/student_bot_template.py` | Minimal example bot. |
+| `src/santorini_harness.py` | `MatchConfig`, `TerminationReason`, `GameResult`, `run_game`, `run_santorini_tournament`. |
+| `src/run_santorini.py` | Local game runner. |
+| `src/starter_bot.py` | Minimal example bot. |
 | `tests/` | Engine unit tests and harness integration tests. |

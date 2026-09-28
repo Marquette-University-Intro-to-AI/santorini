@@ -2,7 +2,7 @@
 
 Usage::
 
-    python src/santorini.py --bot1 bot_a.py --bot2 bot_b.py \\
+    python src/run_santorini.py --bot1 bot_a.py --bot2 bot_b.py \\
         [--num-games 5] [--time-limit 3.0] [--seed 42]
 
 This module is not part of the public API contract; it exists solely to let
@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    from santorini_tournament_harness import MatchConfig, run_santorini_tournament
+    from santorini_harness import MatchConfig, run_santorini_tournament
 
     config = MatchConfig(
         move_time_limit_seconds=args.time_limit,

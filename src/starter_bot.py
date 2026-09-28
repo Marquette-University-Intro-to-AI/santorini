@@ -1,6 +1,6 @@
 """Copy this file to your submission directory and implement choose_action."""
 
-from data_structures import Action, GameState
+from santorini_types import Action, GameState
 
 
 def choose_action(

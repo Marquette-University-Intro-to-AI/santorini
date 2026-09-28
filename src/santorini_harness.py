@@ -13,7 +13,7 @@ from enum import Enum
 from time import perf_counter
 from typing import TypeAlias
 
-from data_structures import Action, GameState
+from santorini_types import Action, GameState
 from santorini_engine import SantoriniEngine
 
 BOARD_SIZE = 5
@@ -178,7 +178,7 @@ def run_santorini_tournament(
     :func:`run_game` with sensible defaults so that a typical call looks
     like::
 
-        from santorini_tournament_harness import run_santorini_tournament, MatchConfig
+        from santorini_harness import run_santorini_tournament, MatchConfig
 
         result = run_santorini_tournament(my_bot_a, my_bot_b)  # one game
         results = run_santorini_tournament(bot1, bot2, num_games=5)  # five games

@@ -10,11 +10,11 @@ description = "Santorini game engine harness API"
 [tool.setuptools]
 package-dir = { "" = "src" }
 py-modules = [
-    "data_structures",
+    "santorini_types",
     "santorini_engine",
-    "santorini_tournament_harness",
-    "santorini",
-    "student_bot_template",
+    "santorini_harness",
+    "run_santorini",
+    "starter_bot",
 ]
 
 [tool.pyright]
@@ -31,8 +31,8 @@ select = ["E", "F", "I", "B", "EXE"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "data_structures",
+    "santorini_types",
     "santorini_engine",
-    "santorini_tournament_harness",
-    "student_bot_template",
+    "santorini_harness",
+    "starter_bot",
 ]

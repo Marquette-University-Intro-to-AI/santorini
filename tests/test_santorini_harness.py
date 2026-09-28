@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import time
 
-from data_structures import Action, GameState
+from santorini_types import Action, GameState
 from santorini_engine import SantoriniEngine
-from santorini_tournament_harness import (
+from santorini_harness import (
     BotFunction,
     GameResult,
     MatchConfig,
@@ -79,8 +79,8 @@ def _fresh_engine(seed: int) -> SantoriniEngine:
 
 
 def test_smoke_full_game_template_bot() -> None:
-    """A full game between two student_bot_template bots runs to a terminal result."""
-    from student_bot_template import choose_action
+    """A full game between two starter bots runs to a terminal result."""
+    from starter_bot import choose_action
 
     result = run_santorini_tournament(choose_action, choose_action, MatchConfig(seed=1), num_games=1)[0]
     assert result.reason is not None
