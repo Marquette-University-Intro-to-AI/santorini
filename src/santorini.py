@@ -2,7 +2,7 @@
 
 Usage::
 
-    python sG_cli.py --bot1 bot_a.py --bot2 bot_b.py \\
+    python src/santorini.py --bot1 bot_a.py --bot2 bot_b.py \\
         [--num-games 5] [--time-limit 3.0] [--seed 42]
 
 This module is not part of the public API contract; it exists solely to let
@@ -14,7 +14,14 @@ from __future__ import annotations
 import argparse
 import sys
 import importlib.util
+from pathlib import Path
 from typing import Any
+
+# Make the repository root importable so run_santorini_game can reach
+# tests.test_helpers (run_game_for_testing) when this CLI is executed directly.
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 
 def _load_bot(path: str) -> Any:
@@ -25,10 +32,12 @@ def _load_bot(path: str) -> Any:
     print a user-friendly message before exiting with code 1.
     """
     spec = importlib.util.spec_from_file_location("bot_module", path)
-    if spec is None:
+    if spec is None or spec.loader is None:
         raise ValueError(f"Cannot create module spec for {path}")
 
     module = importlib.util.module_from_spec(spec)
+    sys.modules["bot_module"] = module
+    spec.loader.exec_module(module)
     if hasattr(module, "choose_action"):
         return getattr(module, "choose_action")
 
@@ -79,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    from santorini_game_engine import MatchConfig, run_sG
+    from santorini_game_engine import MatchConfig, run_santorini_game
 
     config = MatchConfig(
         move_time_limit_seconds=args.time_limit,
@@ -87,12 +96,16 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
     )
 
-    results = run_sG(bot_a, bot_b, config=config, num_games=args.num_games)
+    results = run_santorini_game(bot_a, bot_b, config=config, num_games=args.num_games)
+    name = {0: "Bot A", 1: "Bot B"}
+
+    def display(bot_id: int | None) -> str:
+        return name[bot_id] if bot_id is not None else "None"
 
     for i, result in enumerate(results):
         print(f"\n=== Game {i + 1} ===")
-        print(f"Winner: {'Bot A' if result.winner == 0 else 'Bot B' or 'None'}")
-        print(f"Loser: {'Bot A' if result.loser == 0 else 'Bot B' or 'None'}")
+        print(f"Winner: {display(result.winner)}")
+        print(f"Loser: {display(result.loser)}")
         print(f"Reason: {result.reason.value}")
         print(f"Turns played: {result.turns_played}")
         if result.detail:

@@ -7,14 +7,13 @@ legal actions, then return exactly one member of that tuple.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from time import perf_counter
 from typing import Protocol, TypeAlias
 
 from data_structures import Action, GameState
+from santorini_engine import SantoriniEngine
 
 BOARD_SIZE = 5
 MAX_HEIGHT = 4  # 0: ground; 1--3: building levels; 4: dome
@@ -70,6 +69,7 @@ class TerminationReason(str, Enum):
     BOT_EXCEPTION = "bot_exception"
     TIME_LIMIT = "time_limit"
     TURN_LIMIT = "turn_limit"
+    REPETITION = "repetition"
 
 
 @dataclass(frozen=True)
@@ -84,103 +84,7 @@ class GameResult:
     detail: str = ""
 
 
-class GameEngine(Protocol):
-    """Interface implemented by the official, trusted rules engine only."""
-
-    def initial_state(self, seed: int) -> GameState: ...
-
-    def legal_actions(self, state: GameState) -> tuple[Action, ...]: ...
-
-    def apply_action(self, state: GameState, action: Action) -> GameState: ...
-
-    def is_winning_state(self, state: GameState) -> bool: ...
-
-
-def run_game_for_testing(
-    engine: GameEngine,
-    bot_a: BotFunction,
-    bot_b: BotFunction,
-    config: MatchConfig,
-) -> GameResult:
-    """Run a game in process for local development tests.
-
-    The production harness must call each bot in an isolated worker process,
-    terminate it at the deadline, and pass the returned Action to this same
-    validation logic.  This helper detects an overrun after a call returns;
-    it cannot forcibly stop arbitrary Python code.
-    """
-
-    state = engine.initial_state(config.seed)
-    current_bot_id: BotId = 0
-    moves: list[Action] = []
-
-    for _ in range(config.max_turns):
-        legal_actions = engine.legal_actions(state)
-        if not legal_actions:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.NO_LEGAL_ACTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-            )
-
-        bot = bot_a if current_bot_id == 0 else bot_b
-        started_at = perf_counter()
-        try:
-            action = bot(state, legal_actions, config.move_time_limit_seconds)
-        except Exception as error:  # The official harness records the traceback.
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.BOT_EXCEPTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail=f"{type(error).__name__}: {error}",
-            )
-
-        elapsed_seconds = perf_counter() - started_at
-        if elapsed_seconds > config.move_time_limit_seconds:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.TIME_LIMIT,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail=f"Action returned after {elapsed_seconds:.6f} seconds.",
-            )
-        if action not in legal_actions:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.INVALID_ACTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail="Bot returned an action that was not supplied as legal.",
-            )
-
-        moves.append(action)
-        state = engine.apply_action(state, action)
-        if engine.is_winning_state(state):
-            return GameResult(
-                winner=current_bot_id,
-                loser=1 - current_bot_id,
-                reason=TerminationReason.WIN,
-                turns_played=len(moves),
-                moves=tuple(moves),
-            )
-        current_bot_id = 1 - current_bot_id
-
-    return GameResult(
-        winner=None,
-        loser=None,
-        reason=TerminationReason.TURN_LIMIT,
-        turns_played=len(moves),
-        moves=tuple(moves),
-    )
-
-
-def run_sG(
+def run_santorini_game(
     bot_a: BotFunction,
     bot_b: BotFunction,
     config: MatchConfig | None = None,
@@ -192,10 +96,10 @@ def run_sG(
     :func:`run_game_for_testing` with sensible defaults so that a typical
     call looks like::
 
-        from santorini_harness_api import run_sG, MatchConfig
+        from santorini_game_engine import run_santorini_game, MatchConfig
 
-        result = run_sG(my_bot_a, my_bot_b)  # one game, default config
-        results = run_sG(bot1, bot2, num_games=5)  # five games
+        result = run_santorini_game(my_bot_a, my_bot_b)  # one game
+        results = run_santorini_game(bot1, bot2, num_games=5)  # five games
 
     Parameters
     ----------
@@ -218,6 +122,10 @@ def run_sG(
     list[GameResult]
         One result per game, in the order they were played.
     """
+    # Imported here (not at module top) because tests/test_helpers.py imports
+    # this module; a top-level import would be circular.
+    from tests.test_helpers import run_game_for_testing
+
     if config is None:
         config = MatchConfig()
 
@@ -229,7 +137,7 @@ def run_sG(
             seed=config.seed + i,
         )
         result = run_game_for_testing(
-            engine=_get_engine(),  # type: ignore — the harness provides this.
+            engine=SantoriniEngine(game_config.seed),
             bot_a=bot_a,
             bot_b=bot_b,
             config=game_config,
@@ -237,19 +145,3 @@ def run_sG(
         results.append(result)
 
     return results
-
-
-def _get_engine() -> GameEngine:
-    """Return the game engine instance provided by the harness.
-
-    The official harness sets ``sys.modules[__name__].engine`` after
-    importing this module.  This helper raises a clear error if it is
-    called before that import happens (e.g., during local development).
-    """
-    try:
-        return sys.modules[__name__].engine  # type: ignore — set by harness.
-    except AttributeError:
-        raise RuntimeError(
-            "Game engine not found. Did you run this through the official harness? "
-            "For local testing, use run_game_for_testing() directly."
-        )

@@ -10,3 +10,6 @@ description = "Santorini game engine harness API"
 [[tool.setuptools.packages]]
 name = "src"
 path = "src"
+
+[tool.pyright]
+extraPaths = ["src"]
