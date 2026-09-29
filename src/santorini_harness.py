@@ -13,7 +13,17 @@ from enum import Enum
 from time import perf_counter
 from typing import TypeAlias
 
-from santorini_engine import SantoriniEngine
+from santorini_engine import (
+    BoardState,
+    Fingerprint,
+    SantoriniEngine,
+    apply_action,
+    fingerprint,
+    legal_actions_from,
+    public_state_for,
+    setup,
+    termination_reason,
+)
 from santorini_types import Action, GameState
 
 BOARD_SIZE = 5
@@ -69,6 +79,137 @@ class GameResult:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class _MatchState:
+    """Immutable match state threaded through the pure game loop.
+
+    ``board`` is the canonical position; ``fingerprint_history`` is the
+    chronological sequence of fingerprints of every non-terminal position
+    reached, including the opening position. ``moves`` accumulates the
+    actions played so far. ``current_bot_id`` is the player to move.
+    """
+
+    board: BoardState
+    fingerprint_history: tuple[Fingerprint, ...]
+    moves: tuple[Action, ...]
+    current_bot_id: BotId
+
+
+def _initial_match_state(board: BoardState) -> _MatchState:
+    """Seed a fresh match from the opening ``BoardState`` (opening position in history)."""
+    return _MatchState(
+        board=board,
+        fingerprint_history=(fingerprint(board),),
+        moves=(),
+        current_bot_id=0,
+    )
+
+
+def _step_match(
+    match: _MatchState,
+    bot_a: BotFunction,
+    bot_b: BotFunction,
+    config: MatchConfig,
+) -> _MatchState | GameResult:
+    """Advance the match by one bot turn; returns the next state or a terminal :class:`GameResult`."""
+    legal_actions = legal_actions_from(match.board)
+    if not legal_actions:
+        return GameResult(
+            winner=1 - match.current_bot_id,
+            loser=match.current_bot_id,
+            reason=TerminationReason.NO_LEGAL_ACTION,
+            turns_played=len(match.moves),
+            moves=match.moves,
+        )
+
+    bot = bot_a if match.current_bot_id == 0 else bot_b
+    public_state = public_state_for(match.board, match.current_bot_id)
+    started_at = perf_counter()
+    try:
+        action = bot(public_state, legal_actions, config.move_time_limit_seconds)
+    except Exception as error:  # noqa: BLE001 - a bot crash forfeits the game
+        return GameResult(
+            winner=1 - match.current_bot_id,
+            loser=match.current_bot_id,
+            reason=TerminationReason.BOT_EXCEPTION,
+            turns_played=len(match.moves),
+            moves=match.moves,
+            detail=f"{type(error).__name__}: {error}",
+        )
+
+    elapsed_seconds = perf_counter() - started_at
+    if elapsed_seconds > config.move_time_limit_seconds:
+        return GameResult(
+            winner=1 - match.current_bot_id,
+            loser=match.current_bot_id,
+            reason=TerminationReason.TIME_LIMIT,
+            turns_played=len(match.moves),
+            moves=match.moves,
+            detail=f"Action returned after {elapsed_seconds:.6f} seconds.",
+        )
+    if action not in legal_actions:
+        return GameResult(
+            winner=1 - match.current_bot_id,
+            loser=match.current_bot_id,
+            reason=TerminationReason.INVALID_ACTION,
+            turns_played=len(match.moves),
+            moves=match.moves,
+            detail="Bot returned an action that was not supplied as legal.",
+        )
+
+    next_board = apply_action(match.board, action)
+    moves = match.moves + (action,)
+    history = match.fingerprint_history
+    if next_board.winner is None:
+        history = history + (fingerprint(next_board),)
+    next_match = _MatchState(
+        board=next_board,
+        fingerprint_history=history,
+        moves=moves,
+        current_bot_id=next_board.current_player,
+    )
+    reason = termination_reason(next_board, history, TerminationReason)
+    if reason is None:
+        return next_match
+    if reason == TerminationReason.WIN:
+        winner, loser = match.current_bot_id, 1 - match.current_bot_id
+    elif reason == TerminationReason.REPETITION:
+        winner, loser = None, None
+    else:
+        # NO_LEGAL_ACTION: the player to move has no legal action, so per
+        # spec the opponent is credited the win.
+        winner, loser = 1 - match.current_bot_id, match.current_bot_id
+    return GameResult(
+        winner=winner,
+        loser=loser,
+        reason=reason,
+        turns_played=len(moves),
+        moves=moves,
+    )
+
+
+def _run_match(
+    initial: _MatchState,
+    bot_a: BotFunction,
+    bot_b: BotFunction,
+    config: MatchConfig,
+) -> GameResult:
+    """Drive the pure match state machine to a terminal :class:`GameResult`."""
+    match = initial
+    for _ in range(config.max_turns):
+        outcome = _step_match(match, bot_a, bot_b, config)
+        if isinstance(outcome, GameResult):
+            return outcome
+        match = outcome
+    return GameResult(
+        winner=None,
+        loser=None,
+        reason=TerminationReason.TURN_LIMIT,
+        turns_played=len(match.moves),
+        moves=match.moves,
+    )
+
+
 def run_game(
     engine: SantoriniEngine,
     bot_a: BotFunction,
@@ -77,93 +218,16 @@ def run_game(
 ) -> GameResult:
     """Run one in-process game against an already-constructed engine.
 
-    The stateful engine owns the rules: this loop only handles bot I/O,
-    timing, action validation, and turn-limit enforcement.  The production
-    harness must call each bot in an isolated worker process, terminate it
-    at the deadline, and pass the returned Action to this same validation
-    logic.  This function detects an overrun after a call returns; it
-    cannot forcibly stop arbitrary Python code.
+    The engine is read only for its opening position and is never mutated:
+    the match runs as a pure state machine over the immutable engine core.
+    This function handles bot I/O, timing, action validation, and
+    turn-limit enforcement.  The production harness must call each bot in
+    an isolated worker process, terminate it at the deadline, and pass the
+    returned Action to this same validation logic.  This function detects
+    an overrun after a call returns; it cannot forcibly stop arbitrary
+    Python code.
     """
-
-    current_bot_id: BotId = 0
-    moves: list[Action] = []
-
-    for _ in range(config.max_turns):
-        state = engine.to_public_state(current_bot_id)
-        legal_actions = engine.legal_actions()
-        if not legal_actions:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.NO_LEGAL_ACTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-            )
-
-        bot = bot_a if current_bot_id == 0 else bot_b
-        started_at = perf_counter()
-        try:
-            action = bot(state, legal_actions, config.move_time_limit_seconds)
-        except Exception as error:  # noqa: BLE001 - a bot crash forfeits the game
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.BOT_EXCEPTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail=f"{type(error).__name__}: {error}",
-            )
-
-        elapsed_seconds = perf_counter() - started_at
-        if elapsed_seconds > config.move_time_limit_seconds:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.TIME_LIMIT,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail=f"Action returned after {elapsed_seconds:.6f} seconds.",
-            )
-        if action not in legal_actions:
-            return GameResult(
-                winner=1 - current_bot_id,
-                loser=current_bot_id,
-                reason=TerminationReason.INVALID_ACTION,
-                turns_played=len(moves),
-                moves=tuple(moves),
-                detail="Bot returned an action that was not supplied as legal.",
-            )
-
-        moves.append(action)
-        engine.apply(action)
-        reason = engine.check_termination(TerminationReason)
-        if reason is not None:
-            if reason == TerminationReason.WIN:
-                winner, loser = current_bot_id, 1 - current_bot_id
-            else:
-                # The player to move has no legal action, or the position
-                # has repeated: per spec the opponent is credited the win
-                # for no-legal-action; repetition is a draw.
-                if reason == TerminationReason.REPETITION:
-                    winner, loser = None, None
-                else:
-                    winner, loser = 1 - current_bot_id, current_bot_id
-            return GameResult(
-                winner=winner,
-                loser=loser,
-                reason=reason,
-                turns_played=len(moves),
-                moves=tuple(moves),
-            )
-        current_bot_id = 1 - current_bot_id
-
-    return GameResult(
-        winner=None,
-        loser=None,
-        reason=TerminationReason.TURN_LIMIT,
-        turns_played=len(moves),
-        moves=tuple(moves),
-    )
+    return _run_match(_initial_match_state(engine.to_board_state()), bot_a, bot_b, config)
 
 
 def run_santorini_tournament(
@@ -214,12 +278,7 @@ def run_santorini_tournament(
             max_turns=config.max_turns,
             seed=config.seed + i,
         )
-        result = run_game(
-            engine=SantoriniEngine(game_config.seed),
-            bot_a=bot_a,
-            bot_b=bot_b,
-            config=game_config,
-        )
-        results.append(result)
+        initial = _initial_match_state(setup(game_config.seed))
+        results.append(_run_match(initial, bot_a, bot_b, game_config))
 
     return results

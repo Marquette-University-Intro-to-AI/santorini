@@ -2,11 +2,13 @@
 
 The functional core is a set of immutable, side-effect-free functions over
 ``BoardState``: ``setup``, ``legal_actions_from``, ``apply_action``,
-``successors`` and ``fingerprint``. The stateful :class:`SantoriniEngine`
-is a thin mutable shell that tracks the repetition history and exposes
-perspective-flipped public state to each bot; it delegates all rules
-computation to the core. See ``plans/game-engine-specs.html`` for the
-rules and ``plans/santorini-engine-implementation.md`` for the design.
+``successors``, ``fingerprint``, ``public_state_for`` and
+``termination_reason``. The stateful :class:`SantoriniEngine` is a thin
+mutable shell that tracks the repetition history and exposes the core to
+the rest of the program; it delegates all rules computation to the core.
+The harness runs matches purely over the core and never mutates the
+engine it is given. See ``plans/game-engine-specs.html`` for the rules
+and ``plans/santorini-engine-implementation.md`` for the design.
 """
 
 from __future__ import annotations
@@ -222,61 +224,98 @@ def fingerprint(state: BoardState) -> Fingerprint:
     return (state.heights, player_zero, player_one, state.current_player)
 
 
+def public_state_for(state: BoardState, player_id: int) -> GameState:
+    """Perspective-flipped public ``GameState`` for ``player_id`` (spec §5).
+
+    Pure function over an immutable ``BoardState``: the player's own
+    workers become ``current_workers`` and the opponent's become
+    ``opponent_workers``, with worker order (A/B or C/D) preserved.
+    """
+    return GameState(
+        heights=state.heights,
+        current_workers=state.workers[player_id],
+        opponent_workers=state.workers[1 - player_id],
+        turn_number=state.turn_number,
+    )
+
+
+def termination_reason(
+    state: BoardState,
+    state_history: tuple[Fingerprint, ...],
+    reason_enum: type[TerminationReason],
+) -> TerminationReason | None:
+    """Pure win / no-legal-action / threefold-repetition check (spec §11).
+
+    ``state_history`` is the chronological sequence of fingerprints of
+    every non-terminal position reached, including ``state`` itself. The
+    turn-limit is enforced by the harness loop, not here. ``reason_enum``
+    is passed as a parameter to avoid a runtime circular import
+    (``santorini_harness`` imports this module).
+    """
+    if state.winner is not None:
+        return reason_enum.WIN
+    if len(legal_actions_from(state)) == 0:
+        return reason_enum.NO_LEGAL_ACTION
+    if state_history.count(state_history[-1]) >= 3:
+        return reason_enum.REPETITION
+    return None
+
+
 class SantoriniEngine:
     """A stateful engine for one Santorini game.
 
-    A fresh engine (``SantoriniEngine(seed)``) is fully set up and ready
-    to play: setup has been applied and the opening position is recorded
-    in the repetition history.
+    Holds the position as a single immutable ``BoardState`` (``_board``)
+    plus the repetition history of canonical fingerprints. Every rules
+    operation delegates to a module-level pure function, so the rules
+    logic lives in one place (spec §11-§15); applying an action simply
+    rebinds ``_board`` to the next snapshot. A fresh engine is fully set
+    up and ready to play, with the opening position recorded in the
+    repetition history.
     """
 
     def __init__(self, seed: int) -> None:
-        self.heights: list[list[int]] = []
-        self.workers: dict[str, tuple[int, int]] = {}
-        self.current_player: int = 0
-        self.turn_number: int = 0
         self.state_history: list[Fingerprint] = []
-        self.winner: int | None = None
         self.setup(seed)
 
     def setup(self, seed: int) -> None:
         """Apply the spec §4 setup: A, C, B, D on four distinct squares."""
-        a, c, b, d = _setup_worker_coordinates(seed)
-        self.heights = [list(row) for row in setup(seed).heights]
-        self.workers = {"A": a, "C": c, "B": b, "D": d}
-        self.current_player = 0
-        self.turn_number = 0
-        self.winner = None
-        self.state_history = [self._canonical_fingerprint()]
+        self._board = setup(seed)
+        self.state_history = [fingerprint(self._board)]
+
+    @property
+    def heights(self) -> tuple[tuple[int, ...], ...]:
+        """Current square heights (read-only view of ``_board``)."""
+        return self._board.heights
+
+    @property
+    def workers(self) -> dict[str, tuple[int, int]]:
+        """Worker name -> (row, column) (read-only view of ``_board``)."""
+        flat = self._board.workers[0] + self._board.workers[1]
+        return dict(zip(PLAYER_WORKER_NAMES, [(coordinate.row, coordinate.column) for coordinate in flat], strict=True))
+
+    @property
+    def current_player(self) -> int:
+        return self._board.current_player
+
+    @property
+    def turn_number(self) -> int:
+        return self._board.turn_number
+
+    @property
+    def winner(self) -> int | None:
+        return self._board.winner
 
     def to_board_state(self) -> BoardState:
-        """Snapshot the engine's current position as an immutable ``BoardState``."""
-        a, b = self._player_worker_positions(0)
-        c, d = self._player_worker_positions(1)
-        return BoardState(
-            heights=tuple(tuple(row) for row in self.heights),
-            workers=((Coordinate(*a), Coordinate(*b)), (Coordinate(*c), Coordinate(*d))),
-            current_player=self.current_player,
-            turn_number=self.turn_number,
-            winner=self.winner,
-        )
+        """The engine's current immutable ``BoardState``."""
+        return self._board
 
     def to_public_state(self, player_id: int) -> GameState:
-        """Return the perspective-flipped public state for ``player_id``."""
-        mine = self._player_worker_positions(player_id)
-        theirs = self._player_worker_positions(1 - player_id)
-        return GameState(
-            heights=tuple(tuple(row) for row in self.heights),
-            current_workers=(
-                Coordinate(*mine[0]),
-                Coordinate(*mine[1]),
-            ),
-            opponent_workers=(
-                Coordinate(*theirs[0]),
-                Coordinate(*theirs[1]),
-            ),
-            turn_number=self.turn_number,
-        )
+        """Return the perspective-flipped public state for ``player_id``.
+
+        Delegates to the module-level :func:`public_state_for` applied to
+        the engine's immutable snapshot.
+        """
+        return public_state_for(self.to_board_state(), player_id)
 
     def legal_actions(self) -> tuple[Action, ...]:
         """All legal complete turns for the current player (spec §14).
@@ -287,22 +326,16 @@ class SantoriniEngine:
         return legal_actions_from(self.to_board_state())
 
     def apply(self, action: Action) -> None:
-        """Apply a legal action, mutating internal state.
+        """Apply a legal action, replacing the board with the next state.
 
-        Delegates to the module-level :func:`apply_action` and re-syncs the
-        engine's mutable fields (including the repetition history) from the
-        resulting immutable state.
+        Delegates to the module-level :func:`apply_action` and records the
+        new position in the repetition history (winning moves are not
+        recorded, as the game ends there).
         """
-        next_state = apply_action(self.to_board_state(), action)
-        self.heights = [list(row) for row in next_state.heights]
-        flat = next_state.workers[0] + next_state.workers[1]
-        worker_pairs = [(worker.row, worker.column) for worker in flat]
-        self.workers = dict(zip(PLAYER_WORKER_NAMES, worker_pairs, strict=True))
-        self.current_player = next_state.current_player
-        self.turn_number = next_state.turn_number
-        self.winner = next_state.winner
+        next_state = apply_action(self._board, action)
+        self._board = next_state
         if next_state.winner is None:
-            self.state_history.append(self._canonical_fingerprint())
+            self.state_history.append(fingerprint(next_state))
 
     def successors(self) -> tuple[tuple[Action, BoardState], ...]:
         """All valid next states reachable from the engine's current position.
@@ -312,23 +345,21 @@ class SantoriniEngine:
         """
         return successors(self.to_board_state())
 
-    def check_termination(self, termination_reason: type[TerminationReason]) -> TerminationReason | None:
+    def check_termination(self, reason_enum: type[TerminationReason]) -> TerminationReason | None:
         """Return a termination reason for the engine-tracked rules, else None.
 
         Takes the TerminationReason enum class as a parameter to avoid a
         runtime circular import (santorini_harness imports this module).
 
-        Checks win, no-legal-action, and threefold repetition. The
+        Delegates to the module-level :func:`termination_reason` applied to
+        the engine's immutable snapshot and repetition history. The
         turn-limit is enforced by the harness loop, not here.
         """
-        if self.winner is not None:
-            return termination_reason.WIN
-        if len(self.legal_actions()) == 0:
-            return termination_reason.NO_LEGAL_ACTION
-        fingerprint = self.state_history[-1]
-        if self.state_history.count(fingerprint) >= 3:
-            return termination_reason.REPETITION
-        return None
+        return termination_reason(
+            self.to_board_state(),
+            tuple(self.state_history),
+            reason_enum,
+        )
 
     def _canonical_fingerprint(self) -> Fingerprint:
         """Hashable fingerprint of the complete state (spec §11).
@@ -337,8 +368,4 @@ class SantoriniEngine:
         engine's immutable snapshot. Worker names are excluded: A/B (and
         C/D) are interchangeable within a player.
         """
-        return fingerprint(self.to_board_state())
-
-    def _player_worker_positions(self, player_id: int) -> tuple[tuple[int, int], tuple[int, int]]:
-        first, second = PLAYER_WORKERS[player_id]
-        return self.workers[first], self.workers[second]
+        return fingerprint(self._board)

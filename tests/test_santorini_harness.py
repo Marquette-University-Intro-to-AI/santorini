@@ -78,6 +78,33 @@ def _fresh_engine(seed: int) -> SantoriniEngine:
     return SantoriniEngine(seed)
 
 
+def test_run_game_does_not_mutate_engine() -> None:
+    """run_game reads the engine's opening position and never mutates it.
+
+    The pure functional refactor moved all rules computation out of the
+    engine and into the harness's match state machine, so the engine's
+    mutable fields must be identical before and after a game.
+    """
+    engine = _fresh_engine(3)
+    before = (
+        engine.to_board_state(),
+        tuple(engine.state_history),
+        engine.current_player,
+        engine.turn_number,
+        engine.winner,
+    )
+    result = run_game(engine, first_move_bot, first_move_bot, MatchConfig(seed=3, max_turns=5))
+    after = (
+        engine.to_board_state(),
+        tuple(engine.state_history),
+        engine.current_player,
+        engine.turn_number,
+        engine.winner,
+    )
+    assert before == after
+    assert result.reason in TerminationReason
+
+
 def test_smoke_full_game_template_bot() -> None:
     """A full game between two starter bots runs to a terminal result."""
     from starter_bot import choose_action

@@ -1,5 +1,8 @@
-"""Copy this file to your submission directory and implement choose_action."""
+"""Copy this file to your submission directory and implement choose_action. To get the successor states, use the successors function from santorini_engine.py. You can also use the GameState class from santorini_types.py to
+represent the game state in your bot. The starter bot is intentionally weak; you should replace it with your own
+search or learned policy."""
 
+from santorini_engine import successors
 from santorini_types import Action, GameState
 
 

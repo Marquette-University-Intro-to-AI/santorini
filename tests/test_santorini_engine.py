@@ -7,14 +7,21 @@ perspective transform to the public GameState, and termination detection.
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from santorini_engine import DOME, PLAYER_WORKERS, BoardState, SantoriniEngine, _legal_move_destinations
+from santorini_engine import (
+    DOME,
+    PLAYER_WORKERS,
+    BoardState,
+    SantoriniEngine,
+    _legal_move_destinations,
+    fingerprint,
+)
 from santorini_harness import TerminationReason
+from santorini_types import Coordinate
 
 
 def _engine_with_positions(
@@ -29,17 +36,20 @@ def _engine_with_positions(
 ) -> SantoriniEngine:
     """Build an engine with explicit worker positions and heights.
 
-    Positions are assigned A, C, B, D (spec §4 order) regardless of seed;
-    the seed is used only to initialize the engine before overwriting.
+    Positions are assigned A=p0, C=p1, B=p2, D=p3 (spec §4 order)
+    regardless of seed; the seed only initializes the engine before the
+    hand-built ``BoardState`` replaces it.
     """
     engine = SantoriniEngine(seed)
-    engine.workers = {"A": p0, "C": p1, "B": p2, "D": p3}
-    if heights is not None:
-        engine.heights = copy.deepcopy(heights)
-    engine.current_player = current_player
-    engine.turn_number = turn_number
+    board = BoardState(
+        heights=tuple(tuple(row) for row in (heights or [[0] * 5 for _ in range(5)])),
+        workers=((Coordinate(*p0), Coordinate(*p2)), (Coordinate(*p1), Coordinate(*p3))),
+        current_player=current_player,
+        turn_number=turn_number,
+    )
+    engine._board = board
     # Re-sync the repetition history to the hand-built state.
-    engine.state_history = [engine._canonical_fingerprint()]
+    engine.state_history = [fingerprint(board)]
     return engine
 
 
@@ -393,3 +403,48 @@ def test_successors_next_states_are_immutable() -> None:
         assert isinstance(next_state, BoardState)
         with pytest.raises(FrozenInstanceError):
             next_state.current_player = 1  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_public_state_for_matches_shell() -> None:
+    """Pure public_state_for agrees with the shell's to_public_state."""
+    from santorini_engine import public_state_for
+
+    engine = _engine_with_positions((0, 0), (4, 4), (0, 2), (4, 3), current_player=0)
+    board = engine.to_board_state()
+    for player in (0, 1):
+        assert public_state_for(board, player) == engine.to_public_state(player)
+
+
+def test_termination_reason_win() -> None:
+    from santorini_engine import fingerprint, termination_reason
+
+    engine = SantoriniEngine(5)
+    board = dataclasses.replace(engine.to_board_state(), winner=0)
+    assert termination_reason(board, (fingerprint(board),), TerminationReason) == TerminationReason.WIN
+
+
+def test_termination_reason_no_legal_action() -> None:
+    from santorini_engine import fingerprint, termination_reason
+
+    heights = [[0] * 5 for _ in range(5)]
+    for r, c in ((0, 1), (1, 0), (1, 1), (0, 3), (1, 2), (1, 3)):
+        heights[r][c] = DOME  # wall in both of player 0's workers
+    engine = _engine_with_positions((0, 0), (4, 4), (0, 2), (4, 3), heights=heights, current_player=0)
+    board = engine.to_board_state()
+    assert termination_reason(board, (fingerprint(board),), TerminationReason) == TerminationReason.NO_LEGAL_ACTION
+
+
+def test_termination_reason_threefold_repetition() -> None:
+    from santorini_engine import fingerprint, termination_reason
+
+    board = SantoriniEngine(11).to_board_state()
+    history = (fingerprint(board), fingerprint(board), fingerprint(board))
+    assert termination_reason(board, history, TerminationReason) == TerminationReason.REPETITION
+
+
+def test_termination_reason_two_repeats_not_draw() -> None:
+    from santorini_engine import fingerprint, termination_reason
+
+    board = SantoriniEngine(11).to_board_state()
+    history = (fingerprint(board), fingerprint(board))
+    assert termination_reason(board, history, TerminationReason) is None
