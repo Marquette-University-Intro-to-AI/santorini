@@ -1,4 +1,6 @@
-"""Public API contract for the Santorini course-tournament harness.
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Public API contract for the Santorini course-tournament harness.
 
 The official harness owns rules, legal-action generation, timing, and match
 logs. Student bots receive an immutable public state and a complete tuple of

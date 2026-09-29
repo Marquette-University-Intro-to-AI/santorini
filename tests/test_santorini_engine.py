@@ -1,4 +1,6 @@
-"""Unit tests for the stateful Santorini rules engine.
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Unit tests for the stateful Santorini rules engine.
 
 Covers setup determinism, legal-action generation (move/build legality),
 action application (move, build, dome, win, turn advance), the

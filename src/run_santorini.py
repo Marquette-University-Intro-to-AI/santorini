@@ -1,4 +1,6 @@
-"""Command-line interface for running the Santorini game engine.
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Command-line interface for running the Santorini game engine.
 
 Usage::
 

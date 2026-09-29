@@ -1,4 +1,6 @@
-"""Santorini rules engine: a pure functional core plus a stateful shell.
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Santorini rules engine: a pure functional core plus a stateful shell.
 
 The functional core is a set of immutable, side-effect-free functions over
 ``BoardState``: ``setup``, ``legal_actions_from``, ``apply_action``,

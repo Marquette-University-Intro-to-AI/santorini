@@ -1,4 +1,6 @@
-"""Integration tests for the game harness (plan step 7).
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Integration tests for the game harness (plan step 7).
 
 Covers ``run_game`` and ``run_santorini_tournament`` end to end:
 win, invalid action, bot exception, time limit, turn limit, multiple

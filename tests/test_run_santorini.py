@@ -1,4 +1,6 @@
-"""Tests for the ``run_santorini`` command-line interface.
+"""DO NOT MODIFY: this file is part of the provided rules engine and harness.
+
+Tests for the ``run_santorini`` command-line interface.
 
 Covers bot loading (valid, missing file, missing ``choose_action``),
 argument defaults, the error path, and the per-game display output.

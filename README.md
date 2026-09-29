@@ -1,6 +1,11 @@
-# Santorini tournament harness
+# Santorini course tournament
 
-## Student bot interface
+This package contains the trusted Santorini rules engine and the public API
+your bot uses to play. You write a single `choose_action` function; the
+engine and harness handle everything else. Internal details of the harness
+and repository are in [INTERNAL.md](INTERNAL.md).
+
+## The bot interface: `choose_action`
 
 Every submission contains a Python file, normally `bot.py`, with exactly this
 top-level function:
@@ -36,33 +41,29 @@ The harness supplies complete legal actions rather than asking students to
 generate them. This keeps rules implementation separate from AI design and
 makes an invalid response unambiguous.
 
-## Requirements and restrictions
+## Exploring successor positions: `successors`
 
-- Treat `state` and `legal_actions` as read-only.
-- Do not use the network, subprocesses, interprocess communication, or files
-  outside the submitted bot directory.
-- Do not depend on wall-clock time except to finish before the deadline.
-- A bot may load a model file stored inside its own submission directory.
-- Do not modify the provided rules engine, harness package, or opponent files.
-- A crash, timeout, malformed response, or response not in `legal_actions`
-  forfeits the game.
+To reason about what each move leads to — for example, when building a
+search tree — use the `successors` function from `santorini_engine`:
 
-## Running games from the command line
+```python
+from santorini_engine import successors
 
-`src/run_santorini.py` is the local game runner:
-
-```console
-python src/run_santorini.py \
-  --bot1 bot_a.py \
-  --bot2 bot_b.py \
-  --seed 2026 \
-  --time-limit 2.0 \
-  --num-games 5
+pairs = successors(board_state)  # tuple of (action, next_state) pairs
 ```
 
-`--num-games` runs sequential games seeded from `--seed + game_index`.
-The game always allows 200 turns. A template bot lives at
-`src/starter_bot.py`.
+It returns one `(action, next_state)` pair per legal complete turn, where
+`next_state` is the immutable board resulting from applying `action`.
+Terminal positions yield an empty tuple. `successors` operates on the
+canonical `BoardState` (the engine's internal representation), so if you
+keep your own `BoardState` while searching, pass it straight in.
+
+`santorini_engine` also exposes the other pure rules functions — `setup`,
+`legal_actions_from`, `apply_action`, `fingerprint`, `public_state_for`,
+and `termination_reason` — plus the stateful `SantoriniEngine` wrapper.
+These are part of the trusted engine you may import and read, but never
+modify. The `GameState` and `Action` types from `santorini_types` are the
+public data structures your bot exchanges with the harness.
 
 ## Programmatic harness API
 
@@ -91,29 +92,30 @@ the same seed. The trusted rules engine (`SantoriniEngine` in
 transforms it into `GameState` so that each called bot always sees itself as
 `current_workers`.
 
-## Harness responsibilities
+## Running games from the command line
 
-The harness, not the student bot, is responsible for:
+`src/run_santorini.py` is the local game runner:
 
-1. Creating the starting state and the complete legal-action list.
-2. Enforcing the per-move time limit.
-3. Validating the returned action against the supplied legal-action tuple.
-4. Applying the action, detecting wins, no-legal-move losses, repetition, and
-   enforcing the maximum game length.
-5. Recording the seed, actions, and final outcome in the returned results.
+```console
+python src/run_santorini.py \
+  --bot1 bot_a.py \
+  --bot2 bot_b.py \
+  --seed 2026 \
+  --time-limit 2.0 \
+  --num-games 5
+```
 
-`run_game` in `santorini_harness` drives one in-process game
-against a given engine and two bot functions. The official tournament runner
-should additionally use process isolation because an in-process Python call
-cannot safely terminate a bot that hangs.
+`--num-games` runs sequential games seeded from `--seed + game_index`.
+The game always allows 200 turns. A template bot lives at
+`src/starter_bot.py`.
 
-## Repository layout
+## Requirements and restrictions
 
-| Path | Purpose |
-| --- | --- |
-| `src/santorini_types.py` | `Coordinate`, `Action`, `GameState` (public API types). |
-| `src/santorini_engine.py` | `SantoriniEngine`: setup, legal actions, apply, termination. |
-| `src/santorini_harness.py` | `MatchConfig`, `TerminationReason`, `GameResult`, `run_game`, `run_santorini_tournament`. |
-| `src/run_santorini.py` | Local game runner. |
-| `src/starter_bot.py` | Minimal example bot. |
-| `tests/` | Engine unit tests and harness integration tests. |
+- Treat `state` and `legal_actions` as read-only.
+- Do not use the network, subprocesses, interprocess communication, or files
+  outside the submitted bot directory.
+- Do not depend on wall-clock time except to finish before the deadline.
+- A bot may load a model file stored inside its own submission directory.
+- Do not modify the provided rules engine, harness package, or opponent files.
+- A crash, timeout, malformed response, or response not in `legal_actions`
+  forfeits the game.
